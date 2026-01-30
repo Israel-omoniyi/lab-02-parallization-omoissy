@@ -10,61 +10,92 @@ from typing import List, Dict
 import json
 import socket
 
+
 def get_brewery_count(state: str) -> Dict:
     """
     Retrieves information about breweries in a state and counts the number
-    of breweries. Use page limit of 200 which is the max supported by the 
+    of breweries. Use page limit of 200 which is the max supported by the
     Open Brewery DB API https://www.openbrewerydb.org/documentation.
     We use a combination of page and per_page arguments to get information
-    about all the breweries in a state since a single API call only returns 
+    about all the breweries in a state since a single API call only returns
     a maximum of 200 breweries at a time. The page parameter is incremented by
     1 in every call until we get a non 200 response or an empty response.
- 
+
     Args:
         state (string): The full name of a state, case insensitive.
- 
+
     Returns:
-        Dict: Dictionary with state name and brewery count. For example: {'state': 'maryland', 'count': 109}.
+        Dict: Dictionary with state name and brewery count.
+              For example: {'state': 'maryland', 'brewery_count': 109}.
     """
     print(f"get_brewery_count, state={state}, entry")
     count = 0
 
-    """
-    YOUR CODE HERE.
-    The OpenBrewery DB API URL is of the form "https://api.openbrewerydb.org/v1/breweries?by_state={state}&per_page=200&page={page}"
-    keep incrementing the page number until the response json == [] or status_code != 200
-    """
-    
+    base_url = "https://api.openbrewerydb.org/v1/breweries"
+    per_page = 200
+    page = 1
+
+    while True:
+        url = f"{base_url}?by_state={state}&per_page={per_page}&page={page}"
+
+        try:
+            resp = req.get(url, timeout=30)
+        except Exception as e:
+            # network error: stop and return what we have
+            print(f"get_brewery_count, state={state}, request error: {e}")
+            break
+
+        if resp.status_code != 200:
+            # stop if API stops responding successfully
+            print(f"get_brewery_count, state={state}, status_code={resp.status_code}, stopping")
+            break
+
+        try:
+            data = resp.json()
+        except Exception as e:
+            print(f"get_brewery_count, state={state}, json decode error: {e}")
+            break
+
+        # empty list means no more pages
+        if not data:
+            break
+
+        count += len(data)
+        page += 1
+
     print(f"get_brewery_count, state={state}, exiting")
     return dict(state=state, brewery_count=count)
+
 
 async def async_get_brewery_count(state: str) -> Dict:
     """
     Wraps the get_brewery_count call into async.
+
     Args:
         state (string): The full name of a state, case insensitive.
- 
+
     Returns:
         Dict: Dictionary with state name and brewery count
     """
+    loop = asyncio.get_running_loop()
+    # Run the blocking requests-based function in a background thread
+    return await loop.run_in_executor(None, get_brewery_count, state)
 
-    """
-    YOUR CODE HERE
-    """
-    
+
 async def get_brewery_counts_for_states(states: List[str]) -> List[Dict]:
     """
     Get count of breweries for a list of states in async manner.
+
     Args:
-        state (List): The full name of a state, case insensitive.
- 
+        states (List[str]): List of state names.
+
     Returns:
          List[Dict]: List of dictionaries containing state name and brewery count
     """
+    tasks = [async_get_brewery_count(state) for state in states]
+    results = await asyncio.gather(*tasks)
+    return list(results)
 
-    """
-    YOUR CODE HERE
-    """
 
 if __name__ == "__main__":
     states = ['district_of_columbia', 'maryland', 'new_york', 'virginia']
@@ -87,4 +118,4 @@ if __name__ == "__main__":
     print(f"{__file__}, {result_summary}")
 
     # write result to a file
-    Path("async.json").write_text(json.dumps({'result' : result_summary, 'host' : socket.gethostname()}))
+    Path("async.json").write_text(json.dumps({'result': result_summary, 'host': socket.gethostname()}))
